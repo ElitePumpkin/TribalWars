@@ -148,6 +148,7 @@ void fetch_data_from_server(int q_player_info, struct Player * player) {
         player->light_infantry = received_player.light_infantry;
         player->heavy_infantry = received_player.heavy_infantry;
         player->cavalry = received_player.cavalry;
+        player->wins = received_player.wins;
     }
     
 }
@@ -368,6 +369,7 @@ int main (int argc, char *argv[]) {
     struct Player * player = malloc(sizeof(*player));
     player->type = 1;
     strcpy(player->name, "Mike");
+    player->wins = 0;
     player->income_per_second = 50;
     player->workers = 0;
     player->light_infantry = 0;

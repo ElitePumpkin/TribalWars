@@ -705,6 +705,9 @@ int main() {
             send_current_info(player2, q_player_info, pl2sema);
             update_gold(player3);
             send_current_info(player3, q_player_info, pl3sema);
+            printf("Player 1 wins: %d\n", player1->wins);
+            printf("Player 2 wins: %d\n", player2->wins);
+            printf("Player 3 wins: %d\n", player3->wins);
         }
     }
     else {
