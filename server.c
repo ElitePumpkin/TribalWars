@@ -297,7 +297,7 @@ void update_gold(struct Player * player) {
     player->gold = player->gold + player->income_per_second;
 }
 
-int listen_term_msg (struct Player * player, int termination_count) {
+/*int listen_term_msg (struct Player player) {
     int q_terminate;
     int terminate_msg_length = sizeof(struct TerminateMessage) - sizeof(long);
     struct TerminateMessage term_msg;
@@ -307,6 +307,45 @@ int listen_term_msg (struct Player * player, int termination_count) {
     }
     termination_count += 1;
     return termination_count;
+}*/
+
+int listen_game_over_msg(int q_terminate) {
+    int terminate_msg_length = sizeof(struct TerminateMessage) - sizeof(long);
+    struct TerminateMessage term_msg;
+    if(msgrcv(q_terminate, &term_msg, terminate_msg_length, 0, 0) == -1) {
+        perror("Error in receiving terminate message : server");
+    }
+    
+    if(term_msg.kill_status == 1) { //ondemand quit game
+        struct TerminateMessage temp;
+        int i;
+        for(i = 0; i < 3; i++) {
+            temp.type = 21 + i;
+            temp.kill_status = term_msg.type;
+            if(msgsnd(q_terminate, &temp, terminate_msg_length, 0) == -1) {
+                perror("Error in sending  1st terminate message to client : server");
+            }
+            printf("Terminate message was sent with id: %ld\n", temp.type);
+        }
+        return term_msg.type;
+    }
+    if(term_msg.kill_status == 0) { //from server
+        struct TerminateMessage temp;
+        int i;
+        for(i = 0; i < 3; i++) {
+            temp.type = 31 + i;
+            temp.kill_status = term_msg.type;
+            if(msgsnd(q_terminate, &temp, terminate_msg_length, 0) == -1) {
+                perror("Error in sending  1st terminate message to client : server");
+            }
+            printf("Terminate message was sent with id: %ld\n", temp.type);
+        }
+        return term_msg.type + 10; //11 player1 wins, 12 player2 wins etc
+    }
+    else {
+        perror("Received wrong kill status : server");
+        return -1;
+    }
 }
 
 void initialize_players(struct Player * pl1, struct Player * pl2, struct Player * pl3 ) {
@@ -472,6 +511,31 @@ void take_units_from_attacker(struct Player * attacker, struct AttackOrder order
     attacker->cavalry -= order.c_count;
 }
 
+void send_win_message(long winner) {
+    int q_terminate;
+    q_terminate = msgget(MSG_GAME_OVER, IPC_CREAT | 0640);
+    struct TerminateMessage term_msg;
+    int terminate_msg_length = sizeof(struct TerminateMessage) - sizeof(long);
+    term_msg.type = winner;
+    term_msg.kill_status = 0;
+    if(msgsnd(q_terminate, &term_msg, terminate_msg_length, 0) == -1) {
+        perror("Error in sending winning notification from server to server : server");
+    }
+    printf("Winning message was sent, player %ld\n", winner);
+}
+
+void win_check(struct Player pl1, struct Player pl2, struct Player pl3) {
+    if(pl1.wins == 5) {
+        send_win_message(pl1.type);
+    }
+    if(pl2.wins == 5) {
+        send_win_message(pl2.type);
+    }
+    if(pl3.wins == 5) {
+        send_win_message(pl3.type);
+    }
+}
+
 void process_attack(struct Player * attacker, struct Player * defender, struct AttackOrder order, int q_attack_message) {
     //P
     take_units_from_attacker(attacker, order);
@@ -482,10 +546,10 @@ void process_attack(struct Player * attacker, struct Player * defender, struct A
     if(resolve_fight(attacker, defender, order, q_attack_message) == 1) {
         //won, add one point
         attacker->wins += 1;
-        
-        if(attacker-> wins > 4)
+        if(attacker->wins > 4)
             //send end game message
             printf("Player %ld wins the game!\n", attacker->type);
+            //send_win_message(attacker->type);
             //V
     }
     else {
@@ -657,12 +721,34 @@ int main() {
     int q_notifications;
     int q_attack_order;
     int q_attack_message;
+    int q_terminate;
     int pl1ma, pl2ma, pl3ma;
     int pl1sema, pl2sema, pl3sema;
-    //może tu wskaźnikiem go
-    
-    
-    
+    q_production_order = msgget(MSG_PRODUCTION_ORDER, IPC_CREAT | 0640);
+    q_unit_production = msgget(MSG_UNIT_PRODUCTION, IPC_CREAT | 0640);
+    q_notifications = msgget(MSG_NOTI, IPC_CREAT | 0640);
+    q_attack_order = msgget(MSG_ATTACK_ORDER, IPC_CREAT | 0640);
+    q_attack_message = msgget(MSG_ATTACK_MSG, IPC_CREAT | 0640);
+    q_player_info = msgget(MSG_PLAYER_INFO, IPC_CREAT | 0640);
+    q_ready = msgget(MSG_READY, IPC_CREAT | 0640);
+    q_terminate = msgget(MSG_GAME_OVER, IPC_CREAT | 0640);
+    msgctl(q_player_info, IPC_RMID, 0);
+    msgctl(q_production_order, IPC_RMID, 0);
+    msgctl(q_notifications, IPC_RMID, 0);
+    msgctl(q_attack_order, IPC_RMID, 0);
+    msgctl(q_attack_message, IPC_RMID, 0);
+    msgctl(q_ready, IPC_RMID, 0);
+    msgctl(q_unit_production, IPC_RMID, 0);
+    msgctl(q_terminate, IPC_RMID, 0);
+    q_production_order = msgget(MSG_PRODUCTION_ORDER, IPC_CREAT | 0640);
+    q_unit_production = msgget(MSG_UNIT_PRODUCTION, IPC_CREAT | 0640);
+    q_notifications = msgget(MSG_NOTI, IPC_CREAT | 0640);
+    q_attack_order = msgget(MSG_ATTACK_ORDER, IPC_CREAT | 0640);
+    q_attack_message = msgget(MSG_ATTACK_MSG, IPC_CREAT | 0640);
+    q_player_info = msgget(MSG_PLAYER_INFO, IPC_CREAT | 0640);
+    q_ready = msgget(MSG_READY, IPC_CREAT | 0640);
+    q_terminate = msgget(MSG_GAME_OVER, IPC_CREAT | 0640);
+
     pl1sema = semget(SEM_PLAYER1, 1, IPC_CREAT | 0640);
     pl2sema = semget(SEM_PLAYER2, 1, IPC_CREAT | 0640);
     pl3sema = semget(SEM_PLAYER3, 1, IPC_CREAT | 0640);
@@ -675,16 +761,12 @@ int main() {
     struct Player * player1;
     struct Player * player2;
     struct Player * player3;
-    /*
-    struct Player * player1 = malloc(sizeof(*player1));
-    struct Player * player2 = malloc(sizeof(*player2));
-    struct Player * player3 = malloc(sizeof(*player3));*/
     player1 = shmat(pl1ma, 0, 0);
     player2 = shmat(pl2ma, 0, 0);
     player3 = shmat(pl3ma, 0, 0);
+    int left = 0;
     
     initialize_players(player1, player2, player3);
-    q_ready = msgget(MSG_READY, IPC_CREAT | 0640);
     
     await_ready_players(q_ready, player1, player2, player3);
     
@@ -695,10 +777,11 @@ int main() {
     if (f == 0) {
         //server child
         printf("Server up and running : child[resources send]\n");
-        q_player_info = msgget(MSG_PLAYER_INFO, IPC_CREAT | 0640);
+        /*q_player_info = msgget(MSG_PLAYER_INFO, IPC_CREAT | 0640);*/
         
         while(1) {
             sleep(1);
+            win_check(*player1, *player2, *player3);
             update_gold(player1);
             send_current_info(player1, q_player_info, pl1sema);
             update_gold(player2);
@@ -708,6 +791,7 @@ int main() {
             printf("Player 1 wins: %d\n", player1->wins);
             printf("Player 2 wins: %d\n", player2->wins);
             printf("Player 3 wins: %d\n", player3->wins);
+            printf("Already left: %d\n", left);
         }
     }
     else {
@@ -716,15 +800,8 @@ int main() {
         }
         
         if(g == 0) {
-            //server train listener and production scheduler
             printf("Server up and running : child[train and unit listener]\n");
-            q_production_order = msgget(MSG_PRODUCTION_ORDER, IPC_CREAT | 0640);
-            q_unit_production = msgget(MSG_UNIT_PRODUCTION, IPC_CREAT | 0640);
-            q_notifications = msgget(MSG_NOTI, IPC_CREAT | 0640);
-            /*int production_order_size = sizeof(struct ProductionOrder) - sizeof(long);
-            int unit_size = sizeof(struct Unit) - sizeof(long);
-            struct Unit unit;
-            struct ProductionOrder prod_order;*/
+            
             
             if((un = fork()) < 0) {
                 perror("Order and Unit listener split unsuccesful");
@@ -739,59 +816,6 @@ int main() {
                 order_listener(player1, player2, player3, q_production_order, q_unit_production, q_notifications);
             }
             
-            /*if((t = fork()) < 0) {
-                perror("Error in t forking train listener / unit listener");
-            }
-            
-            if(t == 0) {
-                //train listeners
-                if((t1 = fork()) < 0) {
-                    perror("Error in first t1 forking train listener");
-                }
-                
-                if(t1 == 0) {
-                    //train listener no 1
-                    production_order_listener(player1, q_unit_production);
-                    printf("Production order listener no 1 shut down\n");
-                }
-                else {
-                    if((t2 = fork()) < 0) {
-                        perror("Error in second t2 forking train listener");
-                    }
-                    
-                    if(t2 == 0) {
-                        //train listener no 2
-                        production_order_listener(player2, q_unit_production);
-                        printf("Production order listener no 1 shut down\n");
-                    }
-                    else {
-                        //train listener no 3
-                        production_order_listener(player3, q_unit_production);
-                        printf("Production order listener no 1 shut down\n");
-                    }
-                }
-                printf("All production order listeners were shut down!\n");
-            }*/
-            
-            // while(1) {
-                
-            //     if(msgrcv(q_production_order, &prod_order, production_order_size, 0, 0) == -1) {
-            //         perror("Error in receiving production order : server");
-            //     }
-                
-            //     //critical section!
-            //     //tu myslalem zeby zrobic sekwencyjnie z wyborem po player.type, ale
-            //     //chyba bedzie to srednio dzialalo w przypadku unit listenera
-            //     int has_money = gold_available_check(player, prod_order);
-            //     if(has_money != -1) {
-            //         schedule_production(player1, prod_order, q_unit_production);
-            //     }
-            //     else {
-            //         send_notification(PLAYER_TYPE_1, NO_CASH, q_notifications);
-            //     }
-            //     //stop critical section!
-                
-            // }
             
         }
         
@@ -802,79 +826,45 @@ int main() {
             }
             
             if(h == 0) {
-                //server, production scheduler
-                // printf("Server up and running : child[production scheduler]\n");
-                // q_unit_production = msgget(MSG_UNIT_PRODUCTION, IPC_CREAT | 0640);
-                // int unit_size = sizeof(struct Unit) - sizeof(long);
-                // struct Unit unit;
-                
-                //while(1) {
-                    q_notifications = msgget(MSG_NOTI, IPC_CREAT | 0640);
-                    q_attack_order = msgget(MSG_ATTACK_ORDER, IPC_CREAT | 0640);
-                    q_attack_message = msgget(MSG_ATTACK_MSG, IPC_CREAT | 0640);
-                    attack_listener(player1, player2, player3, q_attack_order, q_notifications, q_attack_message);
-                //}
-               
-                
-                // while(1) {
-                //     // if(msgrcv(q_unit_production, &unit, unit_size, 1, 0) == -1) {
-                //     //     perror("Error in receiving single unit from production scheduler : server");
-                //     // }
-                //     //add units to player
-                //     // add_unit_to_player(player1, PLAYER_TYPE_1, unit.unit_id, unit.production_time);
-                // }
+                attack_listener(player1, player2, player3, q_attack_order, q_notifications, q_attack_message);
             }
             
             else {
                 //server mother, terminate listener
                 printf("Server up and running : mother[terminate listener]\n");
-                int term_count = 0;
-                while(1) {
-                    term_count = listen_term_msg(player1, term_count);
-                }
-                
-                
+                int endstatus = 0;
+                endstatus = listen_game_over_msg(q_terminate);
+                printf("Received end game message : status %d\n", endstatus);
             }
-            
-            
         }
         
-        
-        
-        /*while(1) {
-            struct ProductionOrder order;
-            if(msgrcv(q_production_order, &order, sizeof(struct ProductionOrder) - sizeof(long), 0, 0) == -1) {
-                perror("Error in receiving production order: server");
-                break;
-            }
-            switch(order.unit_id) {
-                case 3:
-                    printf("Worker order has arrived! ");
-                    printf("SERVER mother player1: gold: %d income: %d\n", player1->gold, player1->income_per_second);
-                    player1->gold -= worker[0];
-                    sleep(worker[3]);
-                    player1->workers += 1;
-                    player1->income_per_second += 5;
-                    
-                    break;
-                default:
-                    printf("wrong no inserted!\n");
-            }
-            
-            
-            
-        }*/
-        
     }
-    wait(NULL);
+    //wait(NULL);
+    int my_pid = getpid();
+    signal(SIGQUIT, SIG_IGN);
+    kill(-my_pid, SIGQUIT);
+    printf("Game ended!");
+    sleep(10);
+    msgctl(q_player_info, IPC_RMID, 0);
+    msgctl(q_production_order, IPC_RMID, 0);
+    msgctl(q_notifications, IPC_RMID, 0);
+    msgctl(q_attack_order, IPC_RMID, 0);
+    msgctl(q_attack_message, IPC_RMID, 0);
+    msgctl(q_ready, IPC_RMID, 0);
+    msgctl(q_unit_production, IPC_RMID, 0);
+    msgctl(q_terminate, IPC_RMID, 0);
     
     
-    /*free(player1);
-    free(player2);
-    free(player3);*/
+    shmctl(pl1ma, IPC_RMID, 0);
+    shmctl(pl2ma, IPC_RMID, 0);
+    shmctl(pl3ma, IPC_RMID, 0);
     semctl(pl1sema, 0, IPC_RMID, 1);
     semctl(pl2sema, 0, IPC_RMID, 1);
     semctl(pl3sema, 0, IPC_RMID, 1);
+    
     return 0;
 }
 //jest niezle ale cos sie niewyswietla printf po forku na poczatku procesu servera
+//dodaj semafory tam gdzie trzeba
+
+//ignore ctrl-c i inne

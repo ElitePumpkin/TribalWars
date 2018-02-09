@@ -328,6 +328,18 @@ void send_terminate_message (struct Player * player) {
     usleep(REFRESH_RATE);
 }
 
+int listen_end_game_message(int q_terminate, long player_type) {
+    int terminate_msg_length = sizeof(struct TerminateMessage) - sizeof(long);
+    struct TerminateMessage term_msg;
+    if(msgrcv(q_terminate, &term_msg, terminate_msg_length, 20 + player_type, IPC_NOWAIT) > 0) {
+        return term_msg.kill_status;
+    }
+    if(msgrcv(q_terminate, &term_msg, terminate_msg_length, 30 + player_type, IPC_NOWAIT) > 0) {
+        return 10 + term_msg.kill_status;
+    }
+    return 0;
+}
+
 void ask_for_id(struct Player * player, int q_ready) {
     struct ReadyMessage ready_msg;
     //type 1 for send,  type 2 for receive
@@ -351,6 +363,7 @@ int main (int argc, char *argv[]) {
     int q_ready;
     int q_attack_order;
     int q_attack_message;
+    int q_terminate;
     int sem;
     int opponent1;
     int opponent2;
@@ -363,8 +376,9 @@ int main (int argc, char *argv[]) {
     q_notifications = msgget(MSG_NOTI, IPC_CREAT | 0640);
     q_attack_order = msgget(MSG_ATTACK_ORDER, IPC_CREAT | 0640);
     q_attack_message = msgget(MSG_ATTACK_MSG, IPC_CREAT | 0640);
-    sem = semget(SEM_1, 1, IPC_CREAT | 0640);
-    semctl(sem, 0, SETVAL, 1);
+    q_terminate = msgget(MSG_GAME_OVER, IPC_CREAT | 0640);
+    /*sem = semget(SEM_1, 1, IPC_CREAT | 0640);
+    semctl(sem, 0, SETVAL, 1);*/
     //player
     struct Player * player = malloc(sizeof(*player));
     player->type = 1;
@@ -468,6 +482,7 @@ int main (int argc, char *argv[]) {
                 listen_notifications(q_notifications, amounts, player->type);
                 listen_defence_message(q_attack_message, defences, player->type);
                 listen_attack_message(q_attack_message, attacks, player->type);
+                
                 usleep(REFRESH_RATE);
             }
         //}
@@ -492,6 +507,22 @@ int main (int argc, char *argv[]) {
         
         while(1) {
             usleep(7500);
+            int endstatus = listen_end_game_message(q_terminate, player->type);
+            if(endstatus != 0) {
+                delwin(info);
+                delwin(actions);
+                delwin(notifications);
+                endwin();
+                if(endstatus >= 1 && endstatus <= 3) { //ondemand quit
+                    printf("\n\nPlayer no %d has left the game\n\n", endstatus);
+                    break;
+                }
+                if(endstatus >= 11 && endstatus <= 13) {// somebody has won
+                    printf("\n\nPlayer no %d wins the game!\n\n", endstatus - 10);
+                    break;
+                }
+            }
+            
             box(actions, 0, 0);
             redrawwin(actions);
             int i;
@@ -548,26 +579,27 @@ int main (int argc, char *argv[]) {
                 //QUIT GAME
                 if(highlight == 6) {
                     send_terminate_message(player);
-                    free(player);
+                    /*free(player);
                     delwin(info);
                     delwin(actions);
                     delwin(notifications);
                     delwin(amounts);
                     endwin();
-                    return 0;
+                    exit(0);*/
                 }
             
             }
         }
     }
     
-    wait(NULL);
-    getch();
-    delwin(info);
-    delwin(actions);
-    delwin(notifications);
-    endwin();
+    int my_pid = getpid();
+    signal(SIGQUIT, SIG_IGN);
+    kill(-my_pid, SIGQUIT);
+    //getch();
+    sleep(2);
     free(player);
+    printf("Game Over\n\n");
+    sleep(2);
     return 0;
 }
 
