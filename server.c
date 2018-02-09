@@ -724,6 +724,8 @@ int main() {
     int q_terminate;
     int pl1ma, pl2ma, pl3ma;
     int pl1sema, pl2sema, pl3sema;
+    signal(SIGINT, SIG_IGN);
+    
     q_production_order = msgget(MSG_PRODUCTION_ORDER, IPC_CREAT | 0640);
     q_unit_production = msgget(MSG_UNIT_PRODUCTION, IPC_CREAT | 0640);
     q_notifications = msgget(MSG_NOTI, IPC_CREAT | 0640);
@@ -844,7 +846,7 @@ int main() {
     signal(SIGQUIT, SIG_IGN);
     kill(-my_pid, SIGQUIT);
     printf("Game ended!");
-    sleep(10);
+    sleep(5);
     msgctl(q_player_info, IPC_RMID, 0);
     msgctl(q_production_order, IPC_RMID, 0);
     msgctl(q_notifications, IPC_RMID, 0);

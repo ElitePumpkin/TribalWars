@@ -368,7 +368,7 @@ int main (int argc, char *argv[]) {
     int opponent1;
     int opponent2;
     int f, g = 1;
-    
+    signal(SIGINT, SIG_IGN);
     //queues
     q_player_info = msgget(MSG_PLAYER_INFO, IPC_CREAT | 0640);
     q_production = msgget(MSG_PRODUCTION_ORDER, IPC_CREAT | 0640);\
