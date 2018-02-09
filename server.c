@@ -115,29 +115,28 @@ struct Player {
     //int won_games;
 };
 
-void sem_wait(int sem_id, struct Player * pl) {
+void sem_wait(int sem_id, struct Player pl) {
     struct sembuf semdwn;
     semdwn.sem_num = 0;
     semdwn.sem_op = -1;
     semdwn.sem_flg = 0;
     if(semop(sem_id, &semdwn, 1) == -1) {
-        printf("Player %ld ,", pl->type);
+        printf("Player %ld ,", pl.type);
         perror("Error in semaphore wait!\n");
     }
     //printf("Semaphore wait! Player no: %ld\n", pl->type);
 }
 
-void sem_signal(int sem_id, struct Player * pl) {
+void sem_signal(int sem_id, struct Player pl) {
     struct sembuf semup;
     semup.sem_num = 0;
     semup.sem_op = 1;
     semup.sem_flg = 0;
     if(semop(sem_id, &semup, 1) == -1) {
-        printf("Player %ld ,", pl->type);
+        printf("Player %ld ,", pl.type);
         perror("Error in semaphore signal!\n");
     }
     //printf("Semaphore signal! Player no: %ld\n", pl->type);
-    
 }
 
 void wait_for_player(int q_ready, struct Player * pl, int type) {
@@ -175,12 +174,15 @@ int gold_available_check (struct Player * player, struct ProductionOrder order) 
     return 1;
 }
 
-int units_available_check (struct Player * player, struct AttackOrder order) {
+int units_available_check (struct Player * player, struct AttackOrder order, int semaphores[]) {
+    sem_wait(semaphores[player->type - 1], *player);
     if(order.li_count <= player->light_infantry &&
         order.hi_count <= player->heavy_infantry &&
         order.c_count <= player->cavalry) {
+            sem_signal(semaphores[player->type - 1], *player);
             return 1;
         }
+    sem_signal(semaphores[player->type - 1], *player);
     return -1;
     
 }
@@ -261,14 +263,14 @@ void schedule_production(struct Player * player, struct ProductionOrder order, i
 }
 
 void send_current_info(struct Player * player, int q_player_info, int sem_id) {
-    sem_wait(sem_id, player);
+    sem_wait(sem_id, *player);
     int player_size = sizeof(struct Player) - sizeof(long);
-    //printf("SERVER mother player no. %ld : gold: %d income: %d\n", player->type, player->gold, player->income_per_second);
+    printf("SERVER mother player no. %ld : gold: %d income: %d\n", player->type, player->gold, player->income_per_second);
         if(msgsnd(q_player_info, player, player_size, 0) == -1) {
             perror("Error in sending player info : server :");
             printf("player to send: type: %ld gold: %d\n", player->type, player->gold);
         }
-    sem_signal(sem_id, player);
+    sem_signal(sem_id, *player);
 }
 
 void add_unit_to_player (struct Player * player, int player_id, int unit_id, int unit_production_time) {
@@ -536,16 +538,21 @@ void win_check(struct Player pl1, struct Player pl2, struct Player pl3) {
     }
 }
 
-void process_attack(struct Player * attacker, struct Player * defender, struct AttackOrder order, int q_attack_message) {
+void process_attack(struct Player * attacker, struct Player * defender, struct AttackOrder order, int q_attack_message, int semaphores[]) {
     //P
+    sem_wait(semaphores[attacker->type - 1], *attacker);
     take_units_from_attacker(attacker, order);
     printf("Units taken from attacker - player %ld\n", attacker->type);
+    sem_signal(semaphores[attacker->type - 1], *attacker);
     //V
     sleep(5);
     //P
+    sem_wait(semaphores[defender->type - 1], *defender);
+    sem_wait(semaphores[attacker->type - 1], *attacker);
     if(resolve_fight(attacker, defender, order, q_attack_message) == 1) {
         //won, add one point
         attacker->wins += 1;
+        printf("Player no. %ld has now %d wins\n", attacker->type, attacker->wins);
         if(attacker->wins > 4)
             //send end game message
             printf("Player %ld wins the game!\n", attacker->type);
@@ -555,6 +562,8 @@ void process_attack(struct Player * attacker, struct Player * defender, struct A
     else {
         //lost attack
     }
+    sem_signal(semaphores[attacker->type - 1], *attacker);
+    sem_signal(semaphores[defender->type - 1], *defender);
     //V
 }
 
@@ -593,7 +602,7 @@ void await_production_order(struct Player * pl, int q_production_order, int q_un
     }
 }
 
-void await_attack_order(struct Player *player, struct Player *other1, struct Player *other2, int q_attack_order, int q_notifications, int q_attack_message) {
+void await_attack_order(struct Player *player, struct Player *other1, struct Player *other2, int q_attack_order, int q_notifications, int q_attack_message, int semaphores[]) {
     printf("Awaiting attack orders from player no: %ld", player->type);
     int opponent1, opponent2;
     if(player->type == 1) {
@@ -615,19 +624,30 @@ void await_attack_order(struct Player *player, struct Player *other1, struct Pla
             perror("Error in receiving attack order");
         }
         printf("New attack order from player %ld -> player %d\n", player->type, atc_order.to);
-        if (units_available_check(player, atc_order) == -1) {
+        
+        if (units_available_check(player, atc_order, semaphores) == -1) {
             struct AttackMessage atc_msg;
             atc_msg.type = player->type + 3;
             atc_msg.status = -1;
             printf("Player %ld has no units available to perform this attack, L: %d, H: %d, C: %d\n", player->type, atc_order.li_count, atc_order.hi_count, atc_order.c_count);
             send_attack_message(*player, atc_msg, q_attack_message); //dopracuj...
         }
+        
         else {
-            if(atc_order.to == opponent1)
-                process_attack(player, other1, atc_order, q_attack_message);
-            if(atc_order.to == opponent2)
-                process_attack(player, other2, atc_order, q_attack_message);
+            if(atc_order.to == opponent1) {
+                
+                
+                process_attack(player, other1, atc_order, q_attack_message, semaphores);
+                
+                
+            }
+            if(atc_order.to == opponent2) {
+                
+                process_attack(player, other2, atc_order, q_attack_message, semaphores);
+                
+            }
         }
+        
         
     }
 }
@@ -684,7 +704,7 @@ void order_listener(struct Player * pl1, struct Player * pl2, struct Player * pl
     printf("End of order listner reached\n");
 }
 
-void attack_listener(struct Player * pl1, struct Player * pl2, struct Player * pl3, int q_attack_order, int q_notifications, int q_attack_message) {
+void attack_listener(struct Player * pl1, struct Player * pl2, struct Player * pl3, int q_attack_order, int q_notifications, int q_attack_message, int semaphores[]) {
     int a, b;
     if((a = fork()) < 0) {
         perror("Error in internal forking attack listner no 1");
@@ -692,7 +712,7 @@ void attack_listener(struct Player * pl1, struct Player * pl2, struct Player * p
     if(a == 0) {
         //1st attack listener
         
-        await_attack_order(pl1, pl2, pl3, q_attack_order, q_notifications, q_attack_message);
+        await_attack_order(pl1, pl2, pl3, q_attack_order, q_notifications, q_attack_message, semaphores);
         
     }
     else {
@@ -701,11 +721,11 @@ void attack_listener(struct Player * pl1, struct Player * pl2, struct Player * p
         }
         if(b == 0) {
             //2nd attack listener
-            await_attack_order(pl2, pl1, pl3, q_attack_order, q_notifications, q_attack_message);
+            await_attack_order(pl2, pl1, pl3, q_attack_order, q_notifications, q_attack_message, semaphores);
         }
         else {
             //3rd attack listener
-            await_attack_order(pl3, pl1, pl2, q_attack_order, q_notifications, q_attack_message);
+            await_attack_order(pl3, pl1, pl2, q_attack_order, q_notifications, q_attack_message, semaphores);
         }
     }
     
@@ -724,6 +744,7 @@ int main() {
     int q_terminate;
     int pl1ma, pl2ma, pl3ma;
     int pl1sema, pl2sema, pl3sema;
+    int semaphores[3];
     signal(SIGINT, SIG_IGN);
     
     q_production_order = msgget(MSG_PRODUCTION_ORDER, IPC_CREAT | 0640);
@@ -754,6 +775,9 @@ int main() {
     pl1sema = semget(SEM_PLAYER1, 1, IPC_CREAT | 0640);
     pl2sema = semget(SEM_PLAYER2, 1, IPC_CREAT | 0640);
     pl3sema = semget(SEM_PLAYER3, 1, IPC_CREAT | 0640);
+    semaphores[0] = pl1sema;
+    semaphores[1] = pl2sema;
+    semaphores[2] = pl3sema;
     semctl(pl1sema, 0, SETVAL, 1);
     semctl(pl2sema, 0, SETVAL, 1);
     semctl(pl3sema, 0, SETVAL, 1);
@@ -785,15 +809,12 @@ int main() {
             sleep(1);
             win_check(*player1, *player2, *player3);
             update_gold(player1);
-            send_current_info(player1, q_player_info, pl1sema);
+            send_current_info(player1, q_player_info, semaphores[player1->type - 1]);
             update_gold(player2);
-            send_current_info(player2, q_player_info, pl2sema);
+            send_current_info(player2, q_player_info, semaphores[player2->type - 1]);
             update_gold(player3);
-            send_current_info(player3, q_player_info, pl3sema);
-            printf("Player 1 wins: %d\n", player1->wins);
-            printf("Player 2 wins: %d\n", player2->wins);
-            printf("Player 3 wins: %d\n", player3->wins);
-            printf("Already left: %d\n", left);
+            send_current_info(player3, q_player_info, semaphores[player3->type - 1]);
+            
         }
     }
     else {
@@ -828,7 +849,7 @@ int main() {
             }
             
             if(h == 0) {
-                attack_listener(player1, player2, player3, q_attack_order, q_notifications, q_attack_message);
+                attack_listener(player1, player2, player3, q_attack_order, q_notifications, q_attack_message, semaphores);
             }
             
             else {
@@ -869,4 +890,3 @@ int main() {
 //jest niezle ale cos sie niewyswietla printf po forku na poczatku procesu servera
 //dodaj semafory tam gdzie trzeba
 
-//ignore ctrl-c i inne
