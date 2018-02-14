@@ -43,10 +43,13 @@
 
 
 #define NO_CASH 1
+#define CASH_OK 2
 
 struct GeneralMessage {
     long type;
     char text [50];
+    int unit_type;
+    int unit_count;
 };
 
 struct ReadyMessage {
@@ -187,10 +190,12 @@ int units_available_check (struct Player * player, struct AttackOrder order, int
     
 }
 
-void send_notification(long player_type, int communicate_no, int q_notifications) {
+void send_notification(long player_type, int communicate_no, int q_notifications, int unit_type, int unit_count) {
     int msg_size = sizeof(struct GeneralMessage) - sizeof(long);
     struct GeneralMessage no_cash_msg;
     no_cash_msg.type = player_type;
+    no_cash_msg.unit_type = unit_type;
+    no_cash_msg.unit_count = unit_count;
     strcpy(no_cash_msg.text, "Not enough gold !!!");
     if(msgsnd(q_notifications, &no_cash_msg, msg_size, 0) == -1) {
         perror("Error in sending notification, code NO_CASH");
@@ -273,9 +278,9 @@ void send_current_info(struct Player * player, int q_player_info, int sem_id) {
     sem_signal(sem_id, *player);
 }
 
-void add_unit_to_player (struct Player * player, int player_id, int unit_id, int unit_production_time) {
+void add_unit_to_player (struct Player * player, int player_id, int unit_id, int unit_production_time, int semaphores[]) {
     sleep(unit_production_time);
-
+    sem_wait(semaphores[player->type - 1], *player);
     switch(unit_id) {
         case 0:
             player->workers += 1;
@@ -293,6 +298,7 @@ void add_unit_to_player (struct Player * player, int player_id, int unit_id, int
         default:
             break;
     }
+    sem_signal(semaphores[player->type - 1], *player);
 }
 
 void update_gold(struct Player * player) {
@@ -539,14 +545,11 @@ void win_check(struct Player pl1, struct Player pl2, struct Player pl3) {
 }
 
 void process_attack(struct Player * attacker, struct Player * defender, struct AttackOrder order, int q_attack_message, int semaphores[]) {
-    //P
     sem_wait(semaphores[attacker->type - 1], *attacker);
     take_units_from_attacker(attacker, order);
     printf("Units taken from attacker - player %ld\n", attacker->type);
     sem_signal(semaphores[attacker->type - 1], *attacker);
-    //V
     sleep(5);
-    //P
     sem_wait(semaphores[defender->type - 1], *defender);
     sem_wait(semaphores[attacker->type - 1], *attacker);
     if(resolve_fight(attacker, defender, order, q_attack_message) == 1) {
@@ -570,7 +573,7 @@ void process_attack(struct Player * attacker, struct Player * defender, struct A
 
 
 
-void await_unit_order(struct Player * pl, int q_unit_production) {
+void await_unit_order(struct Player * pl, int q_unit_production, int semaphores[]) {
     printf("Awaiting unit orders connected with player no %ld\n", pl->type);
     struct Unit unit;
     int unit_size = sizeof(struct Unit) - sizeof(long);
@@ -578,7 +581,7 @@ void await_unit_order(struct Player * pl, int q_unit_production) {
         if(msgrcv(q_unit_production, &unit, unit_size, pl->type, 0) == -1) {
             perror("Error in receiving single unit order : server");
         }
-        add_unit_to_player(pl, pl->type, unit.unit_id, unit.production_time);
+        add_unit_to_player(pl, pl->type, unit.unit_id, unit.production_time, semaphores);
         
     }
 }
@@ -593,9 +596,10 @@ void await_production_order(struct Player * pl, int q_production_order, int q_un
         }
         //if has money bla bla
         if(gold_available_check(pl, prod_order) == -1) {
-            send_notification(pl->type, NO_CASH, q_notifications);
+            send_notification(pl->type, NO_CASH, q_notifications, prod_order.unit_id, prod_order.unit_count);
         }
         else {
+            send_notification(pl->type + 10, CASH_OK, q_notifications, prod_order.unit_id, prod_order.unit_count);
             schedule_production(pl, prod_order, q_unit_production);
         }
         
@@ -652,14 +656,14 @@ void await_attack_order(struct Player *player, struct Player *other1, struct Pla
     }
 }
 
-void unit_listener(struct Player * pl1, struct Player * pl2, struct Player * pl3, int q_unit_production) {
+void unit_listener(struct Player * pl1, struct Player * pl2, struct Player * pl3, int q_unit_production, int semaphores[]) {
     int a, b;
     if((a = fork()) < 0) {
         perror("Error in internal forking unit listner no 1");
     }
     if(a == 0) {
         //1st order listener and unit scheduler
-        await_unit_order(pl1, q_unit_production);
+        await_unit_order(pl1, q_unit_production, semaphores);
     }
     else {
         if((b = fork()) < 0) {
@@ -667,11 +671,11 @@ void unit_listener(struct Player * pl1, struct Player * pl2, struct Player * pl3
         }
         if(b == 0) {
             //2nd order listener and unit scheduler
-            await_unit_order(pl2, q_unit_production);
+            await_unit_order(pl2, q_unit_production, semaphores);
         }
         else {
             //3rd order listener and unit scheduler
-            await_unit_order(pl3, q_unit_production);
+            await_unit_order(pl3, q_unit_production, semaphores);
         }
     }
     
@@ -832,7 +836,7 @@ int main() {
             
             if(un == 0) {
                 printf("Server up and running : child of child [unit listener]\n");
-                unit_listener(player1, player2, player3, q_unit_production);
+                unit_listener(player1, player2, player3, q_unit_production, semaphores);
             }
             else {
                 printf("Server up and running : child of child [train listener]\n");
@@ -888,5 +892,6 @@ int main() {
     return 0;
 }
 //jest niezle ale cos sie niewyswietla printf po forku na poczatku procesu servera
-//dodaj semafory tam gdzie trzeba
+//dodaj semafory tam gdzie trzeba // atak zrobiony teraz jeszcze unity?
+//dodaj wiadomosci z iloscia wojsk do klienta
 

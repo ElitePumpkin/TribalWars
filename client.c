@@ -37,6 +37,7 @@
 #define SEM_1 99
 
 #define NO_CASH 1
+#define CASH_OK 2
 
 
 #define PLAYER_TYPE_1 1
@@ -49,6 +50,8 @@
 struct GeneralMessage {
     long type;
     char text [50];
+    int unit_type;
+    int unit_count;
 };
 
 struct PaymentMessage {
@@ -157,11 +160,21 @@ void update_actions(WINDOW * actions, WINDOW * notifications) {
         
 }
 
-void update_notifications(WINDOW * notifications, struct GeneralMessage message) {
+void update_notifications_no_cash(WINDOW * notifications, struct GeneralMessage message) {
     char text_buffer[50];
     wclear(notifications);
     box(notifications, 0, 0);
-    strcpy(text_buffer, message.text);
+    sprintf(text_buffer, "Not enough cash to train %d new unit(s)", message.unit_count);
+    mvwprintw(notifications, 1, 1, text_buffer);
+    wrefresh(notifications);
+    
+}
+
+void update_notifications_ok(WINDOW * notifications, struct GeneralMessage message) {
+    char text_buffer[50];
+    wclear(notifications);
+    box(notifications, 0, 0);
+    sprintf(text_buffer, "Training in progress. %d new unit(s)", message.unit_count);
     mvwprintw(notifications, 1, 1, text_buffer);
     wrefresh(notifications);
     
@@ -169,26 +182,29 @@ void update_notifications(WINDOW * notifications, struct GeneralMessage message)
 
 void update_defences_box(WINDOW * defences, struct AttackMessage report) {
     char defence_report_text[50];
-    char text_buffer[50];
+    char defence_report_buffer[50];
     switch (report.status) {
         case 0:
-            sprintf(defence_report_text, "WE WERE ATTACKED BY PLAYER %d. OUR UNITS WERE CRUSHED!", report.attacker);
+            sprintf(defence_report_text, "DEFENCE LOST! WE WERE ATTACKED BY PLAYER %d", report.attacker);
             break;
         case 1:
-            sprintf(defence_report_text, "WE WERE ATTACKED BY PLAYER %d. OUR UNITS HAVE WON", report.attacker);
+            sprintf(defence_report_text, "DEFENCE WON! WE WERE ATTACKED BY PLAYER %d", report.attacker);
             break;
         default:
             sprintf(defence_report_text, "UNKNOWN REPORT STATUS ERR");
             break;
     }
+    sprintf(defence_report_buffer, "Attack force: L: %d, H: %d, C: %d", report.li_attack, report.hi_attack, report.c_attack);
     wclear(defences);
     box(defences, 0, 0);
     mvwprintw(defences, 1, 1, defence_report_text);
+    mvwprintw(defences, 2, 1, defence_report_buffer);
     wrefresh(defences);
 }
 
 void update_attack_box(WINDOW * attacks, struct AttackMessage report) {
     char attack_report_text[50];
+    char attack_report_buffer[50];
     switch (report.status) {
         case -1:
             sprintf(attack_report_text, "ATTACK NOT SENT. NO UNITS AVAILABLE");
@@ -203,9 +219,11 @@ void update_attack_box(WINDOW * attacks, struct AttackMessage report) {
             sprintf(attack_report_text, "UNKNOWN REPORT STATUS ERR");
             break;
     }
+    sprintf(attack_report_buffer, "Defender force before battle: L: %d, H: %d, C: %d", report.li_defence, report.hi_defence, report.c_defence);
     wclear(attacks);
     box(attacks, 0, 0);
     mvwprintw(attacks, 1, 1, attack_report_text);
+    mvwprintw(attacks, 2, 1, attack_report_buffer);
     wrefresh(attacks);
 }
 
@@ -214,8 +232,13 @@ void listen_notifications(int q_notifications, WINDOW * notifications, int playe
     int msg_size = sizeof(struct GeneralMessage) - sizeof(long);
     
     if(msgrcv(q_notifications, &msg, msg_size, player_type, IPC_NOWAIT) > 0) {
-        update_notifications(notifications, msg);
+        update_notifications_no_cash(notifications, msg);
     }
+    
+    if(msgrcv(q_notifications, &msg, msg_size, player_type + 10, IPC_NOWAIT) > 0) {
+        update_notifications_ok(notifications, msg);
+    }
+    
     
 }
 
@@ -369,6 +392,7 @@ int main (int argc, char *argv[]) {
     int opponent2;
     int f, g = 1;
     signal(SIGINT, SIG_IGN);
+    signal(SIGWINCH, SIG_IGN);
     //queues
     q_player_info = msgget(MSG_PLAYER_INFO, IPC_CREAT | 0640);
     q_production = msgget(MSG_PRODUCTION_ORDER, IPC_CREAT | 0640);\
