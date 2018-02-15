@@ -74,8 +74,8 @@ struct ReadyMessage {
 };
 
 struct AttackMessage {
-    long type; //defence 1,2,3 attack 4,5,6
-    int status; // -1 no units, 0 lost, 1 won
+    long type; 
+    int status; 
     int attacker;
     int defender;
     double attack_force;
@@ -113,7 +113,6 @@ struct Player {
     int cavalry;
     int income_per_second;
     int status;
-    //int won_games;
 };
 
 void sem_wait(int sem_id) {
@@ -138,7 +137,6 @@ void sem_signal(int sem_id) {
 }
 
 void fetch_data_from_server(int q_player_info, struct Player * player) {
-    //player->gold = player->gold + (player->income_per_second / REFRESH_PER_SECOND);
     struct Player received_player;
     if(msgrcv(q_player_info, &received_player, sizeof(struct Player) - sizeof(long), player->type, 0) == -1) {
         perror("Error in receiving player info: client");
@@ -318,15 +316,12 @@ void send_attack_order(int q_attack_order, int destination, int li_count, int hi
 }
 
 int get_unit_amount(WINDOW * amounts, WINDOW * notifications) {
-    //mvwprintw(amounts, 3, 1,  "How many units do you wish to train? [1-9]");
-    //wrefresh(amounts);
-    char c = mvwgetch(amounts, 1, 20);
-    char buf [1];
-    sprintf(buf, "%c", c);
-    //mvwprintw(amounts, 3, 1, buf);
-    //redrawwin(amounts);
-    long unit_count = strtol(buf, NULL, 10);
-    return unit_count;
+    long units = 0;
+    char buf[10];
+    scanf("%s", buf);
+    units = strtol(buf, NULL, 10);
+    return units;
+    
     
 }
 
@@ -387,10 +382,9 @@ int main (int argc, char *argv[]) {
     int q_attack_order;
     int q_attack_message;
     int q_terminate;
-    int sem;
     int opponent1;
     int opponent2;
-    int f, g = 1;
+    int f = 1;
     signal(SIGINT, SIG_IGN);
     signal(SIGWINCH, SIG_IGN);
     //queues
@@ -401,9 +395,8 @@ int main (int argc, char *argv[]) {
     q_attack_order = msgget(MSG_ATTACK_ORDER, IPC_CREAT | 0640);
     q_attack_message = msgget(MSG_ATTACK_MSG, IPC_CREAT | 0640);
     q_terminate = msgget(MSG_GAME_OVER, IPC_CREAT | 0640);
-    /*sem = semget(SEM_1, 1, IPC_CREAT | 0640);
-    semctl(sem, 0, SETVAL, 1);*/
-    //player
+    
+    
     struct Player * player = malloc(sizeof(*player));
     player->type = 1;
     strcpy(player->name, "Mike");
@@ -414,10 +407,8 @@ int main (int argc, char *argv[]) {
     player->heavy_infantry = 0;
     player->cavalry = 0;
     player->gold = 300;
-    //player->won_games = 0;
     
     
-    //init windows
     initscr();
     cbreak();
     curs_set(0);
@@ -462,7 +453,6 @@ int main (int argc, char *argv[]) {
     wrefresh(defences);
     
     ask_for_id(player, q_ready);
-    //send_ready_message(q_ready);
     char choices2[CHOICES][30] = {"Train Worker", "Train Light Infantry", "Train Heavy Infantry", "Train Cavalry", "A", "B", "Quit Game"};
     if(player->type == 1) {
         strcpy(choices2[4], "Attack Player 2");
@@ -488,43 +478,23 @@ int main (int argc, char *argv[]) {
     }
     
     if(f == 0) {
-        //child client
-        /*if((g == fork()) == -1) {
-            perror("Error in second forking : client");
+        while(1) {
+            wclear(notifications);
+            box(notifications, 0, 0);
+            mvwprintw(notifications, 1, 1, "Press Train then units to be created [0-9]");
+            mvwprintw(notifications, 2, 1, "Press Attack then sequence of units e.g 253");
+            wrefresh(notifications);
+            fetch_data_from_server(q_player_info, player);
+            update_info(info, (*player));
+            listen_notifications(q_notifications, amounts, player->type);
+            listen_defence_message(q_attack_message, defences, player->type);
+            listen_attack_message(q_attack_message, attacks, player->type);
+            
+            usleep(REFRESH_RATE);
         }
-        */
-        //if(g == 0) {
-            //LIVE INFO UPDATER
-            while(1) {
-                wclear(notifications);
-                box(notifications, 0, 0);
-                mvwprintw(notifications, 1, 1, "Press Train then units to be created [0-9]");
-                mvwprintw(notifications, 2, 1, "Press Attack then sequence of units e.g 253");
-                wrefresh(notifications);
-                fetch_data_from_server(q_player_info, player);
-                update_info(info, (*player));
-                listen_notifications(q_notifications, amounts, player->type);
-                listen_defence_message(q_attack_message, defences, player->type);
-                listen_attack_message(q_attack_message, attacks, player->type);
-                
-                usleep(REFRESH_RATE);
-            }
-        //}
-        /*else {
-            //LIVE NOTIFICATIONS UPDATER
-            while(1) {
-                listen_notifications(q_notifications, attacks, player->type);
-                usleep(REFRESH_RATE);
-            }
-        }*/
-        
-        
-        
+
     }
     else {
-        //mother client
-        //USER INPUT LISTENER
-        
         int choice;
         int highlight = 0;
         
@@ -572,10 +542,6 @@ int main (int argc, char *argv[]) {
                     break;
             }
             if(choice == 10) {
-                //char buf[10];
-                //sprintf(buf, "high:%d %s", highlight, choices2[highlight]);
-                //mvwprintw(notifications, 5, 1, buf);
-                //wrefresh(notifications);
                 wclear(amounts);
                 box(amounts, 0, 0);
                 wrefresh(amounts);
@@ -587,7 +553,6 @@ int main (int argc, char *argv[]) {
                 }
                 //ATTACK A,B
                 if(highlight == 4 || highlight == 5) {
-                    //opponent 1 or 2
                     int light_infantry_units = 0;
                     int heavy_infantry_units = 0;
                     int cavalry_units = 0;
@@ -600,16 +565,8 @@ int main (int argc, char *argv[]) {
                         send_attack_order(q_attack_order, opponent2, light_infantry_units, heavy_infantry_units, cavalry_units, player->type);
                 }
                 
-                //QUIT GAME
                 if(highlight == 6) {
                     send_terminate_message(player);
-                    /*free(player);
-                    delwin(info);
-                    delwin(actions);
-                    delwin(notifications);
-                    delwin(amounts);
-                    endwin();
-                    exit(0);*/
                 }
             
             }
@@ -619,7 +576,6 @@ int main (int argc, char *argv[]) {
     int my_pid = getpid();
     signal(SIGQUIT, SIG_IGN);
     kill(-my_pid, SIGQUIT);
-    //getch();
     sleep(2);
     free(player);
     printf("Game Over\n\n");

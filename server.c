@@ -115,7 +115,6 @@ struct Player {
     int cavalry;
     int income_per_second;
     int status;
-    //int won_games;
 };
 
 void sem_wait(int sem_id, struct Player pl) {
@@ -127,7 +126,6 @@ void sem_wait(int sem_id, struct Player pl) {
         printf("Player %ld ,", pl.type);
         perror("Error in semaphore wait!\n");
     }
-    //printf("Semaphore wait! Player no: %ld\n", pl->type);
 }
 
 void sem_signal(int sem_id, struct Player pl) {
@@ -139,7 +137,6 @@ void sem_signal(int sem_id, struct Player pl) {
         printf("Player %ld ,", pl.type);
         perror("Error in semaphore signal!\n");
     }
-    //printf("Semaphore signal! Player no: %ld\n", pl->type);
 }
 
 void wait_for_player(int q_ready, struct Player * pl, int type) {
@@ -169,7 +166,6 @@ void await_ready_players (int q_ready, struct Player * pl1, struct Player * pl2,
 }
 
 int gold_available_check (struct Player * player, struct ProductionOrder order) {
-    //to be continued
     int cost_table [] = {150, 100, 250, 550};
     if(player->gold < order.unit_count * cost_table[order.unit_id]) {
         return -1;
@@ -222,8 +218,6 @@ void schedule_production(struct Player * player, struct ProductionOrder order, i
     struct Unit new_unit;
     new_unit.type = player->type;
     new_unit.unit_id = order.unit_id;
-    //add code here
-    //case switch
     switch(new_unit.unit_id) {
         case 0:
             //worker
@@ -305,18 +299,6 @@ void update_gold(struct Player * player) {
     player->gold = player->gold + player->income_per_second;
 }
 
-/*int listen_term_msg (struct Player player) {
-    int q_terminate;
-    int terminate_msg_length = sizeof(struct TerminateMessage) - sizeof(long);
-    struct TerminateMessage term_msg;
-    q_terminate = msgget(MSG_GAME_OVER, IPC_CREAT | 0640);
-    if(msgrcv(q_terminate, &term_msg, terminate_msg_length, player->type, 0) == -1) {
-        perror("Error in receiving terminate message : server");
-    }
-    termination_count += 1;
-    return termination_count;
-}*/
-
 int listen_game_over_msg(int q_terminate) {
     int terminate_msg_length = sizeof(struct TerminateMessage) - sizeof(long);
     struct TerminateMessage term_msg;
@@ -367,7 +349,6 @@ void initialize_players(struct Player * pl1, struct Player * pl2, struct Player 
     pl1->cavalry = 0;
     pl1->gold = 300;
     pl1->status = 0;
-    //pl1->won_games = 0;
     
     pl2->type = 2;
     pl2->wins = 0;
@@ -379,7 +360,6 @@ void initialize_players(struct Player * pl1, struct Player * pl2, struct Player 
     pl2->cavalry = 0;
     pl2->gold = 300;
     pl2->status = 0;
-    //pl2->won_games = 0;
     
     pl3->type = 3;
     pl3->wins = 0;
@@ -391,7 +371,6 @@ void initialize_players(struct Player * pl1, struct Player * pl2, struct Player 
     pl3->cavalry = 0;
     pl3->gold = 300;
     pl3->status = 0;
-    //pl3->won_games = 0;
 }
 
 double calculate_current_defence_force(struct Player defender) {
@@ -438,7 +417,6 @@ int resolve_fight(struct Player * attacker, struct Player * defender, struct Att
     printf("Attack force player %ld : %f\n", attacker->type, attack_force);
     printf("Defence force player %ld : %f\n", defender->type, defence_force);
     if(attack_force == 0) {
-        //wyslalem 0 jednostek bo czemu nie
         printf("Player %ld - > Player %ld. Attacker lost due to 0 units sent\n", attacker->type, defender->type);
         attacker_report->status = 0;
         defender_report->status = 1;
@@ -449,7 +427,6 @@ int resolve_fight(struct Player * attacker, struct Player * defender, struct Att
         return -1;
     }
     if(defence_force == 0) {
-        //nie bronil sie
         printf("Player %ld - > Player %ld. Defender lost due to 0 units in HQ\n", attacker->type, defender->type);
         attacker->light_infantry += order.li_count;
         attacker->heavy_infantry += order.hi_count;
@@ -463,7 +440,6 @@ int resolve_fight(struct Player * attacker, struct Player * defender, struct Att
         return 1;
     }
     if(attack_force > defence_force) {
-        //atakujacy wygrywa
         defender->light_infantry = 0;
         defender->heavy_infantry = 0;
         defender->cavalry = 0;
@@ -480,12 +456,9 @@ int resolve_fight(struct Player * attacker, struct Player * defender, struct Att
         send_attack_message(*defender, *defender_report, q_attack_message);
         free(attacker_report);
         free(defender_report);
-        //wins
         return 1;
     }
     else {
-        //defender wins
-        
         li_lost = (double) order.li_count * ((double) attack_force / (double) defence_force);
         hi_lost = (double) order.hi_count * ((double) attack_force / (double) defence_force);
         c_lost = (double) order.c_count * ((double) attack_force / (double) defence_force);
@@ -508,7 +481,6 @@ int resolve_fight(struct Player * attacker, struct Player * defender, struct Att
         send_attack_message(*defender, *defender_report, q_attack_message);
         free(attacker_report);
         free(defender_report);
-        //loses
         return -1;
     }
 }
@@ -557,17 +529,14 @@ void process_attack(struct Player * attacker, struct Player * defender, struct A
         attacker->wins += 1;
         printf("Player no. %ld has now %d wins\n", attacker->type, attacker->wins);
         if(attacker->wins > 4)
-            //send end game message
             printf("Player %ld wins the game!\n", attacker->type);
-            //send_win_message(attacker->type);
-            //V
+            
     }
     else {
         //lost attack
     }
     sem_signal(semaphores[attacker->type - 1], *attacker);
     sem_signal(semaphores[defender->type - 1], *defender);
-    //V
 }
 
 
@@ -594,7 +563,6 @@ void await_production_order(struct Player * pl, int q_production_order, int q_un
         if(msgrcv(q_production_order, &prod_order, production_order_size, pl->type, 0) == -1) {
             perror("Error in receiving production order : server");
         }
-        //if has money bla bla
         if(gold_available_check(pl, prod_order) == -1) {
             send_notification(pl->type, NO_CASH, q_notifications, prod_order.unit_id, prod_order.unit_count);
         }
@@ -639,19 +607,14 @@ void await_attack_order(struct Player *player, struct Player *other1, struct Pla
         
         else {
             if(atc_order.to == opponent1) {
-                
-                
                 process_attack(player, other1, atc_order, q_attack_message, semaphores);
-                
                 
             }
             if(atc_order.to == opponent2) {
-                
                 process_attack(player, other2, atc_order, q_attack_message, semaphores);
                 
             }
         }
-        
         
     }
 }
@@ -794,7 +757,6 @@ int main() {
     player1 = shmat(pl1ma, 0, 0);
     player2 = shmat(pl2ma, 0, 0);
     player3 = shmat(pl3ma, 0, 0);
-    int left = 0;
     
     initialize_players(player1, player2, player3);
     
@@ -866,7 +828,6 @@ int main() {
         }
         
     }
-    //wait(NULL);
     int my_pid = getpid();
     signal(SIGQUIT, SIG_IGN);
     kill(-my_pid, SIGQUIT);
@@ -891,7 +852,4 @@ int main() {
     
     return 0;
 }
-//jest niezle ale cos sie niewyswietla printf po forku na poczatku procesu servera
-//dodaj semafory tam gdzie trzeba // atak zrobiony teraz jeszcze unity?
-//dodaj wiadomosci z iloscia wojsk do klienta
 
